@@ -7,6 +7,7 @@ const middlewares = require('./utils/middlewares/generals');
 const authRouter = require('./controllers/authController');
 const usersRouter = require('./controllers/usersController');
 const resourcesRouter = require('./controllers/resourcesController');
+const cors = require('cors');
 
 console.log('conectando a', config.MONGODB_URI);
 
@@ -22,6 +23,7 @@ const connectionToDb = async () => {
 
 connectionToDb();
 
+app.use(cors());
 app.use(express.json());
 
 app.use('/auth', authRouter);
