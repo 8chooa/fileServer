@@ -26,9 +26,9 @@ connectionToDb();
 app.use(cors());
 app.use(express.json());
 
-app.use('/auth', authRouter);
-app.use('/users', middlewares.tokenExtractor, middlewares.userExtractor, usersRouter);
-app.use('/resources', middlewares.tokenExtractor, middlewares.userExtractor, resourcesRouter);
+app.use('/api/auth', authRouter);
+app.use('/api/users', middlewares.tokenExtractor, middlewares.userExtractor, usersRouter);
+app.use('/api/resources', middlewares.tokenExtractor, middlewares.userExtractor, resourcesRouter);
 
 app.use(middlewares.unknowEndpoint);
 app.use(middlewares.errorHandler);

@@ -21,7 +21,7 @@ resourcesRouter.post('/upload', upload.array('files', 50), async (request, respo
     const parentId = request.body.parentId; //para id de la carpeta padre (en caso de haber lo gestiona el frontend)
 
     if (!files || files.length === 0) {
-      return response.status(400).json({ error: 'no se subió ningun archivo' });
+      return response.status(400).json({ message: 'no se subió ningun archivo' });
     }
 
     let relativePaths = request.body.paths; 
@@ -95,7 +95,7 @@ resourcesRouter.get('/', async (request, response) =>{
 
     return response.status(200).json(resources);
   } catch (error) {
-    return response.status(500).json({ message: 'error interno al obtener los recursos' });
+    return response.status(500).json({ error: 'error interno al obtener los recursos' });
   }
 });
 
@@ -175,6 +175,21 @@ resourcesRouter.delete('/:id', async (request, response) => {
     response.status(500).json({ message: 'Ha ocurrido un error interno al eliminar el recurso' });
   }
 
+});
+
+resourcesRouter.get('/:id', async (request, response) => {
+  const id = request.params.id;
+  try {
+    const resource = await Resource.findById(id);
+
+    if (!resource) {
+      return response.status(404).json({ message: 'Recurso no encontrado' });
+    }
+
+    return response.json(resource);
+  } catch (error) {
+    return response.status(500).json({ error: 'Error interno del servidor al obtener el recuro especifico' });
+  }
 });
 
 module.exports = resourcesRouter;
