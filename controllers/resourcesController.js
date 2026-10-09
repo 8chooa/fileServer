@@ -1,6 +1,5 @@
 const resourcesRouter = require('express').Router();
 const upload = require('../utils/middlewares/upload');
-
 const path = require('path');
 const fs = require('fs');
 const Resource = require('../models/resource');
@@ -12,6 +11,7 @@ const { ZipArchive  } = require('archiver'); //para comprimir como .zip las carp
 const addFolderToZip = require('../utils/addFolderToZip');
 
 const deleteResourceRecursive = require('../utils/deleteResourceRecursive');
+const mongoose = require('mongoose');
 
 resourcesRouter.post('/upload', upload.array('files', 50), async (request, response) => {
   try {
@@ -125,7 +125,6 @@ resourcesRouter.get('/download/:id', async (request, response) => {
       response.attachment(zipFileName); //establece el valor de Content-Disposition con attachmente (indica al navegador que el contenido será descargado)
       response.setHeader('Content-Type', 'application/zip');
 
-
       const archive = new ZipArchive('zip', {
         zlib: { level: 9 } //nivel mas alto de comprension (gasta mas recursos pero los archivos ocupan menos)
       });
@@ -177,16 +176,37 @@ resourcesRouter.delete('/:id', async (request, response) => {
 
 });
 
+//controlador de ruta solo para carpetas
 resourcesRouter.get('/:id', async (request, response) => {
-  const id = request.params.id;
   try {
-    const resource = await Resource.findById(id);
+    const id = request.params.id;
 
-    if (!resource) {
-      return response.status(404).json({ message: 'Recurso no encontrado' });
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      return response.status(400).json({ message: 'ID no valido' });
+    }
+    
+    const currentFolder = await Resource.findOne({ _id: id });
+
+    if (!currentFolder || currentFolder.type !== 'folder') {
+      return response.status(404).json({ message: 'Carpeta no encontrada' });
     }
 
-    return response.json(resource);
+    const ancestors = [];
+    let parentId = currentFolder.parent;
+
+    while (parentId) {
+      const parentFolder = await Resource.findById(parentId);
+
+      if (!parentFolder) break;
+
+      ancestors.push({ id: parentFolder._id, name: parentFolder.name });
+      parentId = parentFolder.parent;
+    }
+
+    ancestors.reverse(); //invertimos el orden: [Raiz, ..., PadreDirecto]
+
+    return response.json({ ...currentFolder.toJSON(), ancestors });
+
   } catch (error) {
     return response.status(500).json({ error: 'Error interno del servidor al obtener el recuro especifico' });
   }
