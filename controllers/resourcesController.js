@@ -12,63 +12,74 @@ const addFolderToZip = require('../utils/addFolderToZip');
 
 const deleteResourceRecursive = require('../utils/deleteResourceRecursive');
 const mongoose = require('mongoose');
+const uniqueName = require('../utils/uniqueName');
 
 resourcesRouter.post('/upload', upload.array('files', 50), async (request, response) => {
   try {
     const files = request.files;
     const userId = request.user.id;
-
-    const parentId = request.body.parentId; //para id de la carpeta padre (en caso de haber lo gestiona el frontend)
+    const parentId = request.body.parentId;
 
     if (!files || files.length === 0) {
       return response.status(400).json({ message: 'no se subió ningun archivo' });
     }
 
-    let relativePaths = request.body.paths; 
-    //nota: las rutas enviadas desde el formulario del cliente (para casos de varios archivos) es un array de n rutas para n archivos, si es un solo archivo es un string con la ruta
-
-    if (typeof relativePaths === 'string') {
-      relativePaths = [relativePaths]; //eJ: de "hola" a ["hola"]
+    // Normalizamos paths para asegurarnos de que siempre sea un array del mismo tamaño que files
+    let relativePaths = request.body.paths;
+    if (!relativePaths) {
+      relativePaths = files.map(file => file.originalname);
+    } else if (typeof relativePaths === 'string') {
+      relativePaths = [relativePaths];
     }
 
     const savedResources = [];
+    const folderCache = new Map();
 
     for (let i = 0; i < files.length; i++) {
       const file = files[i];
+      const relativePath = relativePaths[i] || file.originalname;
 
-      const relativePath = (relativePaths && relativePaths[i])
-      ? relativePaths[i]
-      : file.originalname;
-
-      const fileParentId = (relativePaths && relativePaths[i])
-      ? await getOrCreateFolderStructure(relativePath, parentId, userId)
-      : parentId;
-
-
-      const fullPathOnDisk = path.join(STORAGE_BASE, relativePath); //unimos para generar la ruta completa
-
-      const dirPath = path.dirname(fullPathOnDisk) //quitamos el archivo del final y quedamos con las rutas del directorio
-
-      if (!fs.existsSync(dirPath)) { //si no existe la ruta
-        fs.mkdirSync(dirPath, { recursive: true }); //crea todas las carpetas que no existan de la ruta
+      // Si la ruta incluye barras '/', asumimos que es una estructura de carpetas
+      // Si es un archivo suelto, su "path" es solo su nombre, por lo que va directo al parentId actual
+      let fileParentId = parentId;
+      if (relativePath.includes('/')) {
+        fileParentId = await getOrCreateFolderStructure(relativePath, parentId, userId, folderCache);
       }
 
-      fs.writeFileSync(fullPathOnDisk, file.buffer); //escribimos el archivo
+      const newName = await uniqueName(file.originalname, fileParentId);
+      let fileRelativePath = newName;
+      let fullPathOnDisk;
+
+      if (fileParentId) {
+        const parentFolder = await Resource.findById(fileParentId);
+        if (!parentFolder) {
+          return response.status(404).json({ error: 'La carpeta contenedora no existe' });
+        }
+        fullPathOnDisk = path.join(parentFolder.pathOnDisk, newName);
+        fileRelativePath = path.join(parentFolder.relativePath, newName);
+      } else {
+        fullPathOnDisk = path.join(STORAGE_BASE, newName);
+      }
+
+      if (!fs.existsSync(path.dirname(fullPathOnDisk))) {
+        fs.mkdirSync(path.dirname(fullPathOnDisk), { recursive: true });
+      }
+
+      fs.writeFileSync(fullPathOnDisk, file.buffer);
 
       let newResource = new Resource({
-        name: file.originalname,
+        name: newName,
         type: 'file',
         mimeType: file.mimetype,
         size: file.size,
         pathOnDisk: fullPathOnDisk,
-        relativePath: relativePath,
-        parent: fileParentId, //id de la carpeta contenedora del archivo
+        relativePath: fileRelativePath,
+        parent: fileParentId,
         owner: userId
       });
 
       const resourceSaved = await newResource.save();
       await resourceSaved.populate('owner', 'name');
-
       savedResources.push(resourceSaved);
     }
 

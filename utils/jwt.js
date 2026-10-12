@@ -6,6 +6,7 @@ const tokenGeneration = (userData) => {
   const payload = {
     username: userData.username,
     id: userData.id,
+    name: userData.name,
   };
 
   const token = jwt.sign(payload, config.SECRET);
