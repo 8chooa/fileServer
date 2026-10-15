@@ -26,6 +26,11 @@ connectionToDb();
 app.use(cors());
 app.use(express.json());
 
+//prueba de acceso local
+app.get('/api/ping', (request, response) => {
+  response.json({ message: 'conexion exitosa desde la red local!' });
+})
+
 app.use('/api/auth', authRouter);
 app.use('/api/users', middlewares.tokenExtractor, middlewares.userExtractor, usersRouter);
 app.use('/api/resources', middlewares.tokenExtractor, middlewares.userExtractor, resourcesRouter);

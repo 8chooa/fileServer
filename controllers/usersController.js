@@ -3,6 +3,7 @@ const middlewares = require('../utils/middlewares/generals');
 const User = require('../models/user');
 const bcrypt = require('bcrypt');
 const Resource = require('../models/resource');
+const { tokenGeneration } = require('../utils/jwt');
 
 usersRouter.get('/profile', async (request, response) => {
   const userByToken = request.user;
@@ -64,7 +65,10 @@ usersRouter.put('/profile/:id', async (request, response) => {
 
   if (id === userByToken.id.toString()) {
     const updatedUser = await User.findByIdAndUpdate(id, newUser, { returnDocument: 'after' });
-    return response.json(updatedUser);
+
+    const token = tokenGeneration(updatedUser);
+
+    return response.json({ user: updatedUser, token: token});
   } else {
     return response.status(403).json({ error: 'no puedes actualizar los datos de otro usuario' });
   }
