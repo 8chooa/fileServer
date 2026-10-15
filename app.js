@@ -8,9 +8,9 @@ const authRouter = require('./controllers/authController');
 const usersRouter = require('./controllers/usersController');
 const resourcesRouter = require('./controllers/resourcesController');
 const cors = require('cors');
+const path = require('path');
 
 console.log('conectando a', config.MONGODB_URI);
-
 
 const connectionToDb = async () => {
   try {
@@ -26,14 +26,15 @@ connectionToDb();
 app.use(cors());
 app.use(express.json());
 
-//prueba de acceso local
-app.get('/api/ping', (request, response) => {
-  response.json({ message: 'conexion exitosa desde la red local!' });
-})
+app.use(express.static('dist'));
 
 app.use('/api/auth', authRouter);
 app.use('/api/users', middlewares.tokenExtractor, middlewares.userExtractor, usersRouter);
 app.use('/api/resources', middlewares.tokenExtractor, middlewares.userExtractor, resourcesRouter);
+
+app.get('/*splat', (request, response) => {
+  response.sendFile(path.resolve(__dirname, 'dist', 'index.html'));
+})
 
 app.use(middlewares.unknowEndpoint);
 app.use(middlewares.errorHandler);
