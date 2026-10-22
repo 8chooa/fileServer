@@ -15,12 +15,19 @@ const mongoose = require('mongoose');
 const uniqueName = require('../utils/uniqueName');
 
 resourcesRouter.post('/upload', upload.array('files'), async (request, response) => {
+
+  const session = await mongoose.startSession();
+  session.startTransaction();
+
+  const writtenFilesOnDisk = [];
+
   try {
     const files = request.files;
     const userId = request.user.id;
     const parentId = request.body.parentId;
 
     if (!files || files.length === 0) {
+      await session.endSession();
       return response.status(400).json({ message: 'no se subió ningun archivo' });
     }
 
@@ -51,9 +58,9 @@ resourcesRouter.post('/upload', upload.array('files'), async (request, response)
       let fullPathOnDisk;
 
       if (fileParentId) {
-        const parentFolder = await Resource.findById(fileParentId);
+        const parentFolder = await Resource.findById(fileParentId).session(session);
         if (!parentFolder) {
-          return response.status(404).json({ error: 'La carpeta contenedora no existe' });
+          throw new Error('La carpeta contenedora no existe');
         }
         fullPathOnDisk = path.join(parentFolder.pathOnDisk, newName);
         fileRelativePath = path.join(parentFolder.relativePath, newName);
@@ -66,6 +73,7 @@ resourcesRouter.post('/upload', upload.array('files'), async (request, response)
       }
 
       fs.writeFileSync(fullPathOnDisk, file.buffer);
+      writtenFilesOnDisk.push(fullPathOnDisk);
 
       let newResource = new Resource({
         name: newName,
@@ -78,7 +86,7 @@ resourcesRouter.post('/upload', upload.array('files'), async (request, response)
         owner: userId
       });
 
-      const resourceSaved = await newResource.save();
+      const resourceSaved = await newResource.save({ session });
       await resourceSaved.populate('owner', 'name');
       savedResources.push(resourceSaved);
     }
@@ -89,7 +97,27 @@ resourcesRouter.post('/upload', upload.array('files'), async (request, response)
     });
 
   } catch (error) {
+    //si algo falla, cancelamos la transaccion de la DB (nada se guarda)
+    await session.abortTransaction();
+    session.endSession();
+
+    //limpiamos del disco los archivos fisicos
+    for(const filePath of writtenFilesOnDisk) {
+      if (fs.existsSync(filePath)) {
+        try {
+          fs.unlinkSync(filePath);
+        } catch (unlinkErr) {
+          console.error('Error al limpiar archivo huerfano:', unlinkErr);
+        }
+      }
+    }
+
     console.log('error al subir recursos', error);
+
+    if (error.code === 'LIMIT_FILE_SIZE') {
+      return response.status(413).json({ error: 'El archivo excede el limite de peso permitido' });
+    }
+
     return response.status(500).json({ error: 'error interno al procesar la subida' });
   }
 });
