@@ -36,7 +36,7 @@ const storage = multer.memoryStorage(); //guardamos temporalmente en la memoria
 
 const upload = multer({
   storage: storage,
-  limits: { fileSize: 1024 * 1024 * 10} //10 MB
+  // limits: { fileSize: 1024 * 1024 * 10} //10 MB
 });
 
 module.exports = upload;

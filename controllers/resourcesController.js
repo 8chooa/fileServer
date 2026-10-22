@@ -14,7 +14,7 @@ const deleteResourceRecursive = require('../utils/deleteResourceRecursive');
 const mongoose = require('mongoose');
 const uniqueName = require('../utils/uniqueName');
 
-resourcesRouter.post('/upload', upload.array('files', 50), async (request, response) => {
+resourcesRouter.post('/upload', upload.array('files'), async (request, response) => {
   try {
     const files = request.files;
     const userId = request.user.id;
