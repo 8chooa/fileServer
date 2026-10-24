@@ -15,11 +15,9 @@ const mongoose = require('mongoose');
 const uniqueName = require('../utils/uniqueName');
 
 resourcesRouter.post('/upload', upload.array('files'), async (request, response) => {
-
-  const session = await mongoose.startSession();
-  session.startTransaction();
-
+  // Ya no usamos sesiones de Mongoose (evita el error de Replica Set)
   const writtenFilesOnDisk = [];
+  const createdResourceIds = []; // Guardaremos los IDs para borrarlos si hay fallo
 
   try {
     const files = request.files;
@@ -27,7 +25,6 @@ resourcesRouter.post('/upload', upload.array('files'), async (request, response)
     const parentId = request.body.parentId;
 
     if (!files || files.length === 0) {
-      await session.endSession();
       return response.status(400).json({ message: 'no se subió ningun archivo' });
     }
 
@@ -47,9 +44,9 @@ resourcesRouter.post('/upload', upload.array('files'), async (request, response)
       const relativePath = relativePaths[i] || file.originalname;
 
       // Si la ruta incluye barras '/', asumimos que es una estructura de carpetas
-      // Si es un archivo suelto, su "path" es solo su nombre, por lo que va directo al parentId actual
       let fileParentId = parentId;
       if (relativePath.includes('/')) {
+        // Nota: Asegúrate de quitar la sesión también de getOrCreateFolderStructure si la recibía
         fileParentId = await getOrCreateFolderStructure(relativePath, parentId, userId, folderCache);
       }
 
@@ -58,7 +55,8 @@ resourcesRouter.post('/upload', upload.array('files'), async (request, response)
       let fullPathOnDisk;
 
       if (fileParentId) {
-        const parentFolder = await Resource.findById(fileParentId).session(session);
+        // Quitamos .session(session) porque ya no usamos transacciones nativas
+        const parentFolder = await Resource.findById(fileParentId);
         if (!parentFolder) {
           throw new Error('La carpeta contenedora no existe');
         }
@@ -72,6 +70,7 @@ resourcesRouter.post('/upload', upload.array('files'), async (request, response)
         fs.mkdirSync(path.dirname(fullPathOnDisk), { recursive: true });
       }
 
+      // Escribimos en disco y guardamos rastro físico
       fs.writeFileSync(fullPathOnDisk, file.buffer);
       writtenFilesOnDisk.push(fullPathOnDisk);
 
@@ -86,7 +85,10 @@ resourcesRouter.post('/upload', upload.array('files'), async (request, response)
         owner: userId
       });
 
-      const resourceSaved = await newResource.save({ session });
+      // Guardamos sin { session } y guardamos el ID para un posible rollback
+      const resourceSaved = await newResource.save();
+      createdResourceIds.push(resourceSaved._id);
+
       await resourceSaved.populate('owner', 'name');
       savedResources.push(resourceSaved);
     }
@@ -97,28 +99,34 @@ resourcesRouter.post('/upload', upload.array('files'), async (request, response)
     });
 
   } catch (error) {
-    //si algo falla, cancelamos la transaccion de la DB (nada se guarda)
-    await session.abortTransaction();
-    session.endSession();
+    console.log('error al subir recursos, iniciando rollback...', error);
 
-    //limpiamos del disco los archivos fisicos
-    for(const filePath of writtenFilesOnDisk) {
+    // 1. Rollback en la Base de Datos: Borramos todos los recursos creados en esta tanda
+    if (createdResourceIds.length > 0) {
+      try {
+        await Resource.deleteMany({ _id: { $in: createdResourceIds } });
+      } catch (dbRollbackErr) {
+        console.error('Error al hacer rollback en la Base de Datos:', dbRollbackErr);
+      }
+    }
+
+    // 2. Rollback en el Disco: Limpiamos los archivos físicos que se alcanzaron a escribir
+    for (const filePath of writtenFilesOnDisk) {
       if (fs.existsSync(filePath)) {
         try {
           fs.unlinkSync(filePath);
         } catch (unlinkErr) {
-          console.error('Error al limpiar archivo huerfano:', unlinkErr);
+          console.error('Error al limpiar archivo huerfano en disco:', unlinkErr);
         }
       }
     }
 
-    console.log('error al subir recursos', error);
-
     if (error.code === 'LIMIT_FILE_SIZE') {
+      console.log('el archivo supera el limite de peso!');
       return response.status(413).json({ error: 'El archivo excede el limite de peso permitido' });
     }
 
-    return response.status(500).json({ error: 'error interno al procesar la subida' });
+    return response.status(500).json({ error: error.message || 'error interno al procesar la subida' });
   }
 });
 
