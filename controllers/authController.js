@@ -38,7 +38,7 @@ authRouter.post('/login', async (request, response) => {
   const correctPassword = user === null ? false : bcrypt.compare(password, user.passwordHash);
 
   if (!(correctPassword && user)) {
-    return response.status(401).json({ message: 'username o contraseña incorrectos' });
+    return response.status(401).json({ message: 'usuario o contraseña incorrectos' });
   }
 
   const token = tokenGeneration(user);
