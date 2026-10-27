@@ -6,8 +6,8 @@
   "scripts": {
     "dev": "nodemon index.js",
     "test": "echo \"Error: no test specified\" && exit 1",
-    "build:ui": "rimraf dist && cd ../fileServer-client && npm run build && copyfiles dist/**/* ../fileServer",
-    "deploy:full": "npm run build:ui && git add . && git commit -m uibuild && git push"
+    "build:ui": "rimraf dist && npm --prefix ../fileServer-client run build && copyfiles -u 3 \"../fileServer-client/dist/**/*\" dist",
+    "deploy:full": "npm run build:ui && git add . && git commit -m \"uibuild\" && git push"
   },
   "keywords": [],
   "author": "",
