@@ -14,10 +14,13 @@ const deleteResourceRecursive = require('../utils/deleteResourceRecursive');
 const mongoose = require('mongoose');
 const uniqueName = require('../utils/uniqueName');
 
+const { notifyClients } = require('../utils/notifyChanges');
+
+let sseClients = [];
+
 resourcesRouter.post('/upload', upload.array('files'), async (request, response) => {
-  // Ya no usamos sesiones de Mongoose (evita el error de Replica Set)
   const writtenFilesOnDisk = [];
-  const createdResourceIds = []; // Guardaremos los IDs para borrarlos si hay fallo
+  const createdResourceIds = [];
 
   try {
     const files = request.files;
@@ -92,6 +95,8 @@ resourcesRouter.post('/upload', upload.array('files'), async (request, response)
       await resourceSaved.populate('owner', 'name');
       savedResources.push(resourceSaved);
     }
+
+    notifyClients(sseClients, { type: 'RESOURCE_CREATED', parentId: parentId });
 
     return response.status(201).json({
       message: 'Recursos subidos y guardados con exito',
@@ -215,6 +220,7 @@ resourcesRouter.delete('/:id', async (request, response) => {
 
     await deleteResourceRecursive(resource);
 
+    notifyClients(sseClients, { type: 'RESOURCE DELETED', parentId: parentId });
     response.status(200).json({ message: 'Recurso y su contenido eliminado correctamente' });
   } catch (error) {
     console.log('error al eliminar el recurso:', error);
@@ -257,6 +263,25 @@ resourcesRouter.get('/:id', async (request, response) => {
   } catch (error) {
     return response.status(500).json({ error: 'Error interno del servidor al obtener el recuro especifico' });
   }
+});
+
+// endpoint que se conecta con el frontend mediante EventSource (la conexion se mantendrá abierta indefinidamente)
+resourcesRouter.get('/events', (request, response) => {
+  // configuramos cabeceras para SSE (Server Sent Event)
+  response.setHeader('Content-Type', 'text/event-stream');
+  response.setHeader('Cache-Control', 'no-cache'); // ?
+  response.setHeader('Connection', 'keep-alive') // ?
+
+  response.flushHeaders(); // evitar timeouts agresivos de proxies o redes locales
+
+  sseClients.push(response);
+  console.log('Cliente conectado a SSE. Total:', sseClients.length);
+
+  // se dispara automáticamente con el evento 'close'
+  request.on('close', () => {
+    sseClients = sseClients.filter(client => client !== response); // ?
+    console.log('Cliente desconectado de SSE. Total:', sseClients.length); // ?
+  });
 });
 
 module.exports = resourcesRouter;
