@@ -20,6 +20,11 @@ const unknowEndpoint = (request, response) => {
 }
 
 const tokenExtractor = (request, response, next) => {
+  // ignoramos la ruta de eventos SSE
+  if (request.originalUrl.includes('/api/resources/events')) {
+    return next();
+  }
+
   const authorization = request.get('authorization');
   if (authorization && authorization.startsWith('Bearer ')) {
     request.token = authorization.replace('Bearer ', '');
@@ -32,7 +37,8 @@ const tokenExtractor = (request, response, next) => {
 
 const userExtractor = (request, response, next) => {
   if (!request.token) {
-    return request.user = null;
+    request.user = null;
+    return next();
   } else {
     const decodedToken = jwt.verify(request.token, config.SECRET) //verifica el token y devuelve el payload si es valido
     if (decodedToken && decodedToken.id) {
